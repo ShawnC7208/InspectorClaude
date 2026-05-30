@@ -4,7 +4,7 @@
 
 InspectorClaude reads your Claude Code session logs, scores them against a set of
 deterministic coaching rules, and tells you how to work with Claude more
-effectively. It surfaces findings and recommendations across six areas:
+effectively. It surfaces findings and recommendations across seven areas:
 
 | Area | What it looks at |
 |---|---|
@@ -14,6 +14,10 @@ effectively. It surfaces findings and recommendations across six areas:
 | **AI Harness Use** | Missing `CLAUDE.md`, repeated prompt patterns, unused skill opportunities |
 | **Efficiency** | Repeated file reads, duplicate output, broad searches, tool-failure loops |
 | **Privacy Awareness** | Secrets, emails, or private paths appearing in prompts or responses |
+| **Session Hygiene** | Overly long sessions, frustration signals, responses accepted without a review window |
+
+It also tracks **per-session token usage** — total tokens, cache-hit rate, and a flag on
+sessions that burn far more than your own typical session.
 
 Everything runs on your machine. No telemetry, no database, no cloud sync.
 
