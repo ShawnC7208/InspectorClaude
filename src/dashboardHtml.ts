@@ -40,6 +40,7 @@ export function renderDashboardHtml(model: LensDashboardModel, options: Dashboar
   const contextFindings = model.findings.filter((finding) => finding.category === "context_health");
   const harnessFindings = model.findings.filter((finding) => finding.category === "ai_harness");
   const patternCategories = groupFindingsByCategory(model.findings);
+  const findingsByInteraction = groupFindingsByInteraction(model.findings);
   const analyzeToken = options.analyzeToken ?? "";
 
   return `<!doctype html>
@@ -60,7 +61,7 @@ export function renderDashboardHtml(model: LensDashboardModel, options: Dashboar
         <div class="brand-wordmark" aria-hidden="true">
           <span class="brand-mark">🔍</span><span class="brand-inspector">Inspector</span><span class="brand-claude">Claude</span>
         </div>
-        <div class="brand-subtitle">Local coaching dashboard</div>
+        <div class="brand-subtitle">Local chat analysis dashboard</div>
       </div>
       <nav class="nav-tabs">
         ${VIEW_LABELS.map(([id, label]) => `<button class="nav-tab" data-view-target="${id}" type="button">${escapeHtml(label)}</button>`).join("")}
@@ -127,8 +128,9 @@ export function renderDashboardHtml(model: LensDashboardModel, options: Dashboar
         <div class="filter-row" aria-label="Activity filters">
           ${activityFilterButtons(model)}
         </div>
+        ${activityImportHelp()}
         <section class="panel timeline-panel">
-          ${model.activity.sessions.length ? model.activity.sessions.map(sessionRow).join("") : emptyState("No sessions available. Analyze Code logs or import Chat/Cowork summaries to populate this view.")}
+          ${model.activity.sessions.length ? model.activity.sessions.map((session) => sessionRow(session, findingsByInteraction.get(session.interactionId) ?? [])).join("") : emptyState("No sessions available. Analyze Code logs or import Chat/Cowork summaries to populate this view.")}
           <div class="empty-state filter-empty" data-filter-empty hidden>No sessions match this source filter.</div>
         </section>
       </section>
@@ -363,6 +365,18 @@ function renderFindings(findings: LensFinding[]): string {
   return rankFindingGroups(groupFindingsByRule(findings)).map(findingGroupCard).join("");
 }
 
+// Map each interaction (session) to the findings that touch it, matching the
+// per-session findingCount computed in buildActivity.
+function groupFindingsByInteraction(findings: LensFinding[]): Map<string, LensFinding[]> {
+  const groups = new Map<string, LensFinding[]>();
+  for (const finding of findings) {
+    for (const interactionId of finding.interactionIds) {
+      groups.set(interactionId, [...(groups.get(interactionId) ?? []), finding]);
+    }
+  }
+  return groups;
+}
+
 function groupFindingsByRule(findings: LensFinding[]): FindingGroup[] {
   const groups = new Map<string, LensFinding[]>();
   for (const finding of findings) {
@@ -459,6 +473,28 @@ function activityFilterButtons(model: LensDashboardModel): string {
     .join("");
 }
 
+function activityImportHelp(): string {
+  return `<details class="help-panel">
+    <summary><span class="help-icon" aria-hidden="true">＋</span>How to add Claude Chat &amp; Cowork sessions</summary>
+    <div class="help-body">
+      <p>Chat and Cowork activity is never read automatically. Add it yourself, then click <strong>Analyze All</strong> at the top to re-scan.</p>
+      <h4>Option 1 — claude.ai data export (recommended)</h4>
+      <ol>
+        <li>In Claude, open <strong>Settings → Privacy → Export data</strong> and request your export. Anthropic emails you a download link (it can take a little while to arrive).</li>
+        <li>Download it and leave it in your <strong>Downloads</strong> folder. InspectorClaude auto-detects an exported folder named like <code>data-…-batch-1</code>, or a zip named like <code>claude-export-….zip</code>.</li>
+        <li>Click <strong>Analyze All</strong>.</li>
+      </ol>
+      <h4>Option 2 — drop in transcripts or summaries manually</h4>
+      <ul>
+        <li>Save Chat transcripts or summaries (<code>.md</code>, <code>.txt</code>, or <code>.json</code>) into <code>~/.inspectorclaude/imports/chat/</code></li>
+        <li>Save Cowork checkpoints, transcripts, or summaries into <code>~/.inspectorclaude/imports/cowork/</code></li>
+        <li>Click <strong>Analyze All</strong>.</li>
+      </ul>
+      <p class="help-note">Everything stays on your machine — InspectorClaude reads only the export and import folders above, never hidden Claude app databases.</p>
+    </div>
+  </details>`;
+}
+
 function activitySourceCounts(model: LensDashboardModel): Record<Source, number> {
   return model.activity.sessions.reduce<Record<Source, number>>(
     (counts, session) => {
@@ -469,19 +505,85 @@ function activitySourceCounts(model: LensDashboardModel): Record<Source, number>
   );
 }
 
-function sessionRow(session: LensDashboardModel["activity"]["sessions"][number]): string {
-  return `<article class="session-row" data-session-source="${escapeHtml(session.source)}">
-    <div>
+function sessionRow(session: LensDashboardModel["activity"]["sessions"][number], findings: LensFinding[]): string {
+  const highUsageBadge = session.highUsage ? ` <span class="flag-badge" title="Unusually high token usage vs. your other sessions">high usage</span>` : "";
+  const header = `<div>
       <span class="source-badge">${escapeHtml(session.source)}</span>
-      <strong>${escapeHtml(session.title ?? session.interactionId)}</strong>
+      <strong>${escapeHtml(session.title ?? session.interactionId)}</strong>${highUsageBadge}
       <p>${formatDate(session.startedAt)}${session.endedAt ? ` to ${formatDate(session.endedAt)}` : ""}</p>
     </div>
     <dl>
       <dt>Events</dt><dd>${session.eventCount}</dd>
       <dt>Findings</dt><dd>${session.findingCount}</dd>
+      <dt>Tokens</dt><dd>${sessionTokens(session)}</dd>
+      <dt>Cache hit</dt><dd>${sessionCacheHit(session)}</dd>
       <dt>Duration</dt><dd>${sessionDuration(session.startedAt, session.endedAt)}</dd>
-    </dl>
-  </article>`;
+    </dl>`;
+
+  // Sessions with no findings stay a plain, inert card.
+  if (findings.length === 0) {
+    return `<article class="session-row" data-session-source="${escapeHtml(session.source)}">${header}</article>`;
+  }
+
+  // Otherwise the whole row is a click-to-expand disclosure listing this
+  // session's findings, scoped to this session's evidence.
+  const items = rankFindings(findings).map((finding) => sessionFindingItem(finding, session.interactionId)).join("");
+  return `<details class="session-row session-row--expandable" data-session-source="${escapeHtml(session.source)}">
+    <summary class="session-summary">${header}</summary>
+    <div class="session-findings">
+      <div class="session-findings-head">Findings in this session</div>
+      ${items}
+    </div>
+  </details>`;
+}
+
+function sessionFindingItem(finding: LensFinding, interactionId: string): string {
+  const evidence = (finding.evidence ?? []).filter((item) => item.interactionId === interactionId);
+  const evidenceBlock = evidence.length
+    ? `<div class="evidence-list">${evidence
+        .map(
+          (item) =>
+            `<details class="evidence-detail"><summary>${escapeHtml(item.label)}</summary>${
+              item.excerpt
+                ? `<blockquote class="evidence-excerpt-block">${escapeHtml(item.excerpt)}</blockquote>`
+                : `<p class="no-excerpt-hint">Prompt text not loaded. <button class="link-btn" data-load-excerpts type="button">Load prompt excerpts</button></p>`
+            }</details>`
+        )
+        .join("")}</div>`
+    : "";
+  return `<div class="session-finding" data-severity="${escapeHtml(finding.severity)}">
+    <div class="finding-topline">
+      <span class="severity ${escapeHtml(finding.severity)}">${escapeHtml(finding.severity)}</span>
+      <span>${escapeHtml(CATEGORY_LABELS[finding.category] ?? finding.category)}</span>
+      <span>${Math.round(finding.confidence * 100)}% confidence</span>
+    </div>
+    <h4>${escapeHtml(finding.title)}</h4>
+    <p>${escapeHtml(finding.explanation)}</p>
+    <div class="next-action">${escapeHtml(finding.recommendation)}</div>
+    ${evidenceBlock}
+  </div>`;
+}
+
+function sessionTokens(session: LensDashboardModel["activity"]["sessions"][number]): string {
+  if (session.totalTokens == null || session.tokenSource === "none") {
+    return unavailableMetric("not available from this source");
+  }
+  const formatted = formatTokenCount(session.totalTokens);
+  return session.tokenSource === "estimated" ? `~${formatted} <span class="metric-note">est.</span>` : formatted;
+}
+
+function sessionCacheHit(session: LensDashboardModel["activity"]["sessions"][number]): string {
+  // Cache hit is only meaningful for exact (Claude Code) usage.
+  if (session.tokenSource !== "exact" || session.cacheHitRatio == null) {
+    return unavailableMetric("Claude Code only");
+  }
+  return `${Math.round(session.cacheHitRatio * 100)}%`;
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}k`;
+  return String(value);
 }
 
 function sessionDuration(startedAt: string | undefined, endedAt: string | undefined): string {
@@ -785,6 +887,8 @@ button, pre { font: inherit; }
 .severity.high { color: var(--danger); }
 .severity.medium { color: var(--warning); }
 .severity.low, .severity.info { color: var(--accent); }
+.flag-badge { display: inline-flex; align-items: center; height: 20px; border-radius: 999px; padding: 0 8px; font-size: 11px; font-weight: 600; color: var(--warning); background: color-mix(in srgb, var(--warning) 16%, transparent); text-transform: uppercase; letter-spacing: 0.03em; }
+.metric-note { font-size: 11px; color: var(--muted); }
 .session-count { display: inline-flex; align-items: center; height: 22px; border-radius: 999px; padding: 0 8px; background: var(--surface-2); font-size: 12px; color: var(--muted); }
 .next-action { margin-top: 10px; padding: 10px; border-left: 3px solid var(--accent); background: #fbeee5; color: #5a2c10; }
 .evidence-section { margin-top: 12px; }
@@ -807,12 +911,36 @@ button, pre { font: inherit; }
 .filter-row, .report-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .filter-button, .secondary-button { border-color: var(--line); background: var(--surface); text-align: center; }
 .primary-button { background: var(--accent); color: white; text-align: center; }
+.help-panel { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; margin-bottom: 10px; }
+.help-panel > summary { cursor: pointer; list-style: none; padding: 12px 14px; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.help-panel > summary::-webkit-details-marker { display: none; }
+.help-panel .help-icon { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; color: var(--accent); font-weight: 700; transition: transform 0.12s; }
+.help-panel[open] > summary .help-icon { transform: rotate(45deg); }
+.help-panel .help-body { padding: 0 16px 14px; border-top: 1px solid var(--line); }
+.help-panel h4 { margin: 14px 0 6px; font-size: 13px; }
+.help-panel p { margin: 12px 0 0; color: var(--muted); line-height: 1.5; }
+.help-panel ol, .help-panel ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.help-panel li { line-height: 1.5; }
+.help-panel code { background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.help-panel .help-note { font-size: 13px; font-style: italic; }
 .timeline-panel { display: grid; gap: 10px; }
 .session-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; margin-top: 0; }
 .session-row dl, .metric-list { display: grid; grid-template-columns: repeat(3, auto); gap: 8px 14px; margin: 0; }
 .session-row dl { grid-auto-flow: column; grid-template-rows: auto auto; }
 .session-row dt, .metric-list dt { color: var(--muted); font-size: 12px; }
 .session-row dd, .metric-list dd { margin: 0; font-weight: 650; }
+.session-row--expandable { display: block; padding: 0; }
+.session-summary { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; list-style: none; cursor: pointer; padding: 12px 34px 12px 12px; border-radius: 8px; }
+.session-summary::-webkit-details-marker { display: none; }
+.session-summary::after { content: "›"; position: absolute; right: 14px; top: 12px; color: var(--muted); font-size: 18px; line-height: 1; transition: transform 0.12s; }
+.session-row--expandable[open] > .session-summary::after { transform: rotate(90deg); }
+.session-summary:hover { background: var(--surface-2); }
+.session-findings { padding: 0 12px 12px; display: grid; gap: 10px; }
+.session-findings-head { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.session-finding { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--surface-2); }
+.session-finding h4 { margin: 8px 0 4px; font-size: 15px; }
+.session-finding p { margin: 0; color: var(--muted); line-height: 1.45; }
+.session-finding .evidence-list { margin-top: 8px; }
 .metric-list { grid-template-columns: 1fr; }
 .metric-list div { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .large-score { font-size: 56px; line-height: 1; font-weight: 850; color: var(--accent); }
@@ -855,7 +983,7 @@ button, pre { font: inherit; }
   .topbar-actions { justify-items: stretch; }
   .score-grid { grid-template-columns: 1fr; }
   .workspace { padding: 16px; }
-  .session-row { grid-template-columns: 1fr; }
+  .session-row, .session-summary { grid-template-columns: 1fr; }
 }
 .nav-tab,
 .filter-button,

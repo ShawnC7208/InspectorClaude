@@ -59,7 +59,7 @@ export function renderMcpAppHtml(preview?: PreviewState): string {
         <div class="brand-wordmark" aria-hidden="true">
           <span class="brand-mark">🔍</span><span class="brand-inspector">Inspector</span><span class="brand-claude">Claude</span>
         </div>
-        <div class="brand-subtitle">Local coaching dashboard</div>
+        <div class="brand-subtitle">Local chat analysis dashboard</div>
       </div>
       <nav class="nav-tabs">${navButtons}</nav>
       <div class="privacy-pill" id="privacy-pill">Local only — Metadata only</div>
@@ -258,15 +258,54 @@ function activityBars(model){
     return'<span title="'+esc(s.title||s.interactionId)+'" style="height:'+h+'px"></span>';
   }).join('')+'</div>';
 }
-function sessionRow(s){
-  return'<article class="session-row" data-session-source="'+esc(s.source)+'">'
-    +'<div><span class="source-badge">'+esc(s.source)+'</span>'
-    +'<strong>'+esc(s.title||s.interactionId)+'</strong>'
+function fmtTok(v){if(v>=1000000)return(v/1000000).toFixed(1)+'M';if(v>=1000)return Math.round(v/1000)+'k';return''+v;}
+function sessTokens(s){
+  if(s.totalTokens==null||s.tokenSource==='none')return unavail('not available from this source');
+  var f=fmtTok(s.totalTokens);
+  return s.tokenSource==='estimated'?'~'+f+' <span class="metric-note">est.</span>':f;
+}
+function sessCache(s){
+  if(s.tokenSource!=='exact'||s.cacheHitRatio==null)return unavail('Claude Code only');
+  return Math.round(s.cacheHitRatio*100)+'%';
+}
+function sessionFindingItem(f,interactionId){
+  var evidence=(f.evidence||[]).filter(function(e){return e.interactionId===interactionId;});
+  var evBlock='';
+  if(evidence.length){
+    evBlock='<div class="evidence-list">'+evidence.map(function(e){
+      return'<details class="evidence-detail"><summary>'+esc(e.label)+'</summary>'
+        +(e.excerpt
+          ?'<blockquote class="evidence-excerpt-block">'+esc(e.excerpt)+'</blockquote>'
+          :'<p class="no-excerpt-hint">Prompt text not loaded. <button class="link-btn" data-load-excerpts type="button">Load prompt excerpts</button></p>')
+        +'</details>';
+    }).join('')+'</div>';
+  }
+  return'<div class="session-finding" data-severity="'+esc(f.severity)+'">'
+    +'<div class="finding-topline"><span class="severity '+esc(f.severity)+'">'+esc(f.severity)+'</span>'
+    +'<span>'+esc(CAT_LABELS[f.category]||f.category)+'</span>'
+    +'<span>'+Math.round(f.confidence*100)+'% confidence</span></div>'
+    +'<h4>'+esc(f.title)+'</h4><p>'+esc(f.explanation)+'</p>'
+    +'<div class="next-action">'+esc(f.recommendation)+'</div>'+evBlock+'</div>';
+}
+function sessionRow(s,findings){
+  findings=findings||[];
+  var flag=s.highUsage?' <span class="flag-badge" title="Unusually high token usage vs. your other sessions">high usage</span>':'';
+  var header='<div><span class="source-badge">'+esc(s.source)+'</span>'
+    +'<strong>'+esc(s.title||s.interactionId)+'</strong>'+flag
     +'<p>'+fd(s.startedAt)+(s.endedAt?' to '+fd(s.endedAt):'')+' </p></div>'
     +'<dl><dt>Events</dt><dd>'+s.eventCount+'</dd>'
     +'<dt>Findings</dt><dd>'+s.findingCount+'</dd>'
-    +'<dt>Duration</dt><dd>'+dur(s.startedAt,s.endedAt)+'</dd></dl>'
-    +'</article>';
+    +'<dt>Tokens</dt><dd>'+sessTokens(s)+'</dd>'
+    +'<dt>Cache hit</dt><dd>'+sessCache(s)+'</dd>'
+    +'<dt>Duration</dt><dd>'+dur(s.startedAt,s.endedAt)+'</dd></dl>';
+  if(!findings.length){
+    return'<article class="session-row" data-session-source="'+esc(s.source)+'">'+header+'</article>';
+  }
+  var items=rankItems(findings).map(function(f){return sessionFindingItem(f,s.interactionId);}).join('');
+  return'<details class="session-row session-row--expandable" data-session-source="'+esc(s.source)+'">'
+    +'<summary class="session-summary">'+header+'</summary>'
+    +'<div class="session-findings"><div class="session-findings-head">Findings in this session</div>'+items+'</div>'
+    +'</details>';
 }
 function harnessInventory(model){
   var h=model.harness;
@@ -330,6 +369,33 @@ function buildOverview(model){
     +activityBars(model)+'</section>'
     +'</div></section>';
 }
+function groupFindingsByInteraction(findings){
+  var map={};
+  (findings||[]).forEach(function(f){
+    (f.interactionIds||[]).forEach(function(id){(map[id]=map[id]||[]).push(f);});
+  });
+  return map;
+}
+function activityImportHelp(){
+  return'<details class="help-panel">'
+    +'<summary><span class="help-icon" aria-hidden="true">＋</span>How to add Claude Chat &amp; Cowork sessions</summary>'
+    +'<div class="help-body">'
+    +'<p>Chat and Cowork activity is never read automatically. Add it yourself, then click <strong>Analyze All</strong> to re-scan.</p>'
+    +'<h4>Option 1 — claude.ai data export (recommended)</h4>'
+    +'<ol>'
+    +'<li>In Claude, open <strong>Settings → Privacy → Export data</strong> and request your export. Anthropic emails you a download link (it can take a little while to arrive).</li>'
+    +'<li>Download it and leave it in your <strong>Downloads</strong> folder. InspectorClaude auto-detects an exported folder named like <code>data-…-batch-1</code>, or a zip named like <code>claude-export-….zip</code>.</li>'
+    +'<li>Click <strong>Analyze All</strong>.</li>'
+    +'</ol>'
+    +'<h4>Option 2 — drop in transcripts or summaries manually</h4>'
+    +'<ul>'
+    +'<li>Save Chat transcripts or summaries (<code>.md</code>, <code>.txt</code>, or <code>.json</code>) into <code>~/.inspectorclaude/imports/chat/</code></li>'
+    +'<li>Save Cowork checkpoints, transcripts, or summaries into <code>~/.inspectorclaude/imports/cowork/</code></li>'
+    +'<li>Click <strong>Analyze All</strong>.</li>'
+    +'</ul>'
+    +'<p class="help-note">Everything stays on your machine — InspectorClaude reads only the export and import folders above, never hidden Claude app databases.</p>'
+    +'</div></details>';
+}
 function buildActivity(model){
   var total=model.activity.sessions.length;
   var counts={code:0,chat:0,cowork:0};
@@ -339,11 +405,13 @@ function buildActivity(model){
     var label=src==='all'?'All':src.charAt(0).toUpperCase()+src.slice(1);
     return'<button class="filter-button" data-source-filter="'+src+'" type="button">'+label+' <span>'+count+'</span></button>';
   }).join('');
+  var byInteraction=groupFindingsByInteraction(model.findings);
   return'<section class="view" data-view="activity">'
     +'<div class="section-head"><h2>Activity</h2><p>Analyzed sessions by surface. Duration and model cost stay unavailable when the source cannot support them.</p></div>'
     +'<div class="filter-row" aria-label="Activity filters">'+filterBtns+'</div>'
+    +activityImportHelp()
     +'<section class="panel timeline-panel">'
-    +(total?model.activity.sessions.map(sessionRow).join(''):empty('No sessions available. Analyze Code logs or import Chat/Cowork summaries.'))
+    +(total?model.activity.sessions.map(function(s){return sessionRow(s,byInteraction[s.interactionId]||[]);}).join(''):empty('No sessions available. Analyze Code logs or import Chat/Cowork summaries.'))
     +'<div class="empty-state filter-empty" data-filter-empty hidden>No sessions match this source filter.</div>'
     +'</section></section>';
 }

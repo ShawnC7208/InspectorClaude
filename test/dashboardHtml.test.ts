@@ -63,6 +63,36 @@ test("dashboard HTML renders activity filter counts and filtered empty state", (
   assert.ok(html.includes("data-filter-empty"));
   assert.ok(html.includes("No sessions match this source filter."));
   assert.ok(html.includes("No supported Chat logs were found."));
+
+  // Activity view explains how to add Chat/Cowork data.
+  assert.ok(html.includes("How to add Claude Chat"));
+  assert.ok(html.includes("Settings → Privacy → Export data"));
+  assert.ok(html.includes("~/.inspectorclaude/imports/chat/"));
+  assert.ok(html.includes("~/.inspectorclaude/imports/cowork/"));
+});
+
+test("dashboard HTML makes sessions with findings expandable and inert otherwise", () => {
+  // 21 user prompts trips session_hygiene.mega_session, giving this session a finding.
+  const withFinding = Array.from({ length: 21 }, (_, i) =>
+    JSON.stringify({ sessionId: "busy", timestamp: `2026-01-01T00:${String(i).padStart(2, "0")}:00Z`, type: "user", message: { role: "user", content: `Question ${i}` } })
+  ).join("\n");
+  const model = buildDashboardModel(parseClaudeCodeJsonlText(withFinding));
+  const html = renderDashboardHtml(model);
+
+  assert.ok(html.includes('class="session-row session-row--expandable"'), "expected an expandable session row");
+  assert.ok(html.includes("Findings in this session"), "expected the per-session findings panel");
+  assert.ok(html.includes("Very long session may dilute"), "expected the finding title inside the panel");
+
+  // A session with no findings stays a plain, inert article (no disclosure).
+  const quiet = buildDashboardModel(
+    parseClaudeCodeJsonlText(
+      JSON.stringify({ sessionId: "calm", timestamp: "2026-01-01T00:00:00Z", type: "assistant", message: { role: "assistant", content: "ok" } })
+    )
+  );
+  const quietHtml = renderDashboardHtml(quiet);
+  // Scope to the class attribute — ".session-row--expandable" also appears in the stylesheet.
+  assert.ok(!quietHtml.includes('class="session-row session-row--expandable"'), "a finding-free session should not be expandable");
+  assert.ok(!quietHtml.includes("Findings in this session"));
 });
 
 test("dashboard HTML shows session duration when timestamps are available", () => {

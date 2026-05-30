@@ -44,6 +44,18 @@ export type CapabilityProfile = {
   supportsHistoricalIndexing: boolean;
 };
 
+// Per-session token usage, summed across all assistant turns in a session.
+// Only Claude Code logs carry exact usage; other sources stay estimate-only.
+export type TokenUsage = {
+  input: number;
+  output: number;
+  cacheCreation: number;
+  cacheRead: number;
+  total: number;
+  // cacheRead / (input + cacheCreation + cacheRead). High = stable, reused context.
+  cacheHitRatio: number;
+};
+
 export type InteractionRecord = {
   id: string;
   source: Source;
@@ -58,6 +70,7 @@ export type InteractionRecord = {
   toolCallCount?: number;
   estimatedTokens?: number;
   exactTokens?: number;
+  tokenUsage?: TokenUsage;
   costEstimate?: number;
   capabilityProfileId: string;
   metadata?: Record<string, string | number | boolean>;
@@ -189,10 +202,23 @@ export type SourceSummary = {
   limitations: string[];
 };
 
+export type TokenTotals = {
+  // Summed exact tokens across sessions that report usage (Claude Code).
+  exactTotal: number;
+  // Summed estimated tokens across sessions without exact usage.
+  estimatedTotal: number;
+  // How many sessions contributed exact usage (drives cold-start framing).
+  sessionsWithExact: number;
+  heaviestSessionId?: string;
+  heaviestSessionTitle?: string;
+  heaviestSessionTokens?: number;
+};
+
 export type PracticeSummary = {
   overallScore: LensScore;
   headline: string;
   topActions: string[];
+  tokenTotals?: TokenTotals;
 };
 
 export type ActivityTimeline = {
@@ -204,6 +230,14 @@ export type ActivityTimeline = {
     endedAt?: string;
     eventCount: number;
     findingCount: number;
+    // Total tokens for the session; exact for Code, estimated otherwise.
+    totalTokens?: number;
+    // "exact" (Code usage), "estimated" (length-based), or "none".
+    tokenSource?: "exact" | "estimated" | "none";
+    // cacheRead share of input — only present for exact (Code) sessions.
+    cacheHitRatio?: number;
+    // Flagged by the high-token-session rule as an outlier vs. the user's own sessions.
+    highUsage?: boolean;
   }>;
 };
 
