@@ -67,6 +67,7 @@ export function exportReportMarkdown(report: LensReport): string {
     report.summary,
     "",
     ...scoreSection(model),
+    ...tokenSection(model),
     ...findingsSection(report.findings),
     ...recommendationsSection(report.recommendations),
     ...skillSection(model),
@@ -106,6 +107,31 @@ function scoreSection(model: LensDashboardModel | undefined): string[] {
     ...model.scores.map((score) => `| ${score.label} | ${score.status} | ${escapeTable(score.explanation)} |`),
     ""
   ];
+}
+
+function tokenSection(model: LensDashboardModel | undefined): string[] {
+  const totals = model?.summary.tokenTotals;
+  if (!totals || (totals.exactTotal === 0 && totals.estimatedTotal === 0)) return [];
+
+  const lines = ["## Token Usage", ""];
+  if (totals.sessionsWithExact > 0) {
+    lines.push(`Exact (Claude Code): ${formatTokens(totals.exactTotal)} across ${totals.sessionsWithExact} session(s).`);
+  }
+  if (totals.estimatedTotal > 0) {
+    lines.push(`Estimated (other sources): ~${formatTokens(totals.estimatedTotal)}.`);
+  }
+  if (totals.heaviestSessionTokens) {
+    const name = totals.heaviestSessionTitle ?? totals.heaviestSessionId ?? "a session";
+    lines.push(`Heaviest session: ${escapeTable(name)} at ${formatTokens(totals.heaviestSessionTokens)} tokens.`);
+  }
+  lines.push("");
+  return lines;
+}
+
+function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}k`;
+  return String(value);
 }
 
 function findingsSection(findings: LensFinding[]): string[] {

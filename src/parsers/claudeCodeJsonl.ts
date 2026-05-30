@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { CAPABILITY_PROFILES } from "../capabilities.js";
 import { mergeDatasets } from "../dataset.js";
 import { excerpt, stableHash } from "../redaction.js";
-import type { EventRecord, InteractionRecord, NormalizedDataset } from "../types.js";
+import type { EventRecord, InteractionRecord, NormalizedDataset, TokenUsage } from "../types.js";
 
 type ParseOptions = {
   title?: string;
@@ -31,7 +31,7 @@ export function parseClaudeCodeJsonlText(text: string, options: ParseOptions = {
   let projectPath = options.projectPath;
   let turnCount = 0;
   let malformedCount = 0;
-  let exactTokens = 0;
+  const tokenTally = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
   const pendingTools: Array<{ id?: string; name: string }> = [];
   const toolsById = new Map<string, string>();
 
@@ -64,7 +64,7 @@ export function parseClaudeCodeJsonlText(text: string, options: ParseOptions = {
     endedAt = timestamp ?? endedAt;
     projectPath ??= stringField(parsed.cwd) ?? stringField(parsed.projectPath);
     model ??= stringField(parsed.model) ?? nestedString(parsed, ["message", "model"]);
-    exactTokens += usageTokens(parsed);
+    addUsageTokens(tokenTally, parsed);
 
     const extracted = extractEvents(parsed, sessionId, index);
     for (const event of extracted) {
@@ -84,6 +84,7 @@ export function parseClaudeCodeJsonlText(text: string, options: ParseOptions = {
   });
 
   const toolCallCount = events.filter((event) => event.eventType === "tool_call").length;
+  const tokenUsage = buildTokenUsage(tokenTally);
   const interaction: InteractionRecord = {
     id: sessionId,
     source: "code",
@@ -96,7 +97,8 @@ export function parseClaudeCodeJsonlText(text: string, options: ParseOptions = {
     turnCount,
     toolCallCount,
     estimatedTokens: estimateTokens(events),
-    exactTokens: exactTokens || undefined,
+    exactTokens: tokenUsage?.total,
+    tokenUsage,
     capabilityProfileId: CAPABILITY_PROFILES.code.id
   };
 
@@ -247,11 +249,30 @@ function isFailedToolResult(item: JsonObject): boolean {
   return /\b(command not found|permission denied|traceback|uncaught exception|failed with|fatal:|error:)\b/i.test(content);
 }
 
-function usageTokens(parsed: JsonObject): number {
+type TokenTally = { input: number; output: number; cacheCreation: number; cacheRead: number };
+
+function addUsageTokens(tally: TokenTally, parsed: JsonObject): void {
   const usage = objectField(parsed.usage) ?? objectField(objectField(parsed.message)?.usage);
-  if (!usage) return 0;
-  const tokenKeys = ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"];
-  return tokenKeys.reduce((sum, key) => sum + numberField(usage[key]), 0);
+  if (!usage) return;
+  tally.input += numberField(usage.input_tokens);
+  tally.output += numberField(usage.output_tokens);
+  tally.cacheCreation += numberField(usage.cache_creation_input_tokens);
+  tally.cacheRead += numberField(usage.cache_read_input_tokens);
+}
+
+function buildTokenUsage(tally: TokenTally): TokenUsage | undefined {
+  const total = tally.input + tally.output + tally.cacheCreation + tally.cacheRead;
+  if (total <= 0) return undefined;
+  // Cache hit = reused input vs. all input the model had to take in (fresh + created + read).
+  const inputSide = tally.input + tally.cacheCreation + tally.cacheRead;
+  return {
+    input: tally.input,
+    output: tally.output,
+    cacheCreation: tally.cacheCreation,
+    cacheRead: tally.cacheRead,
+    total,
+    cacheHitRatio: inputSide > 0 ? tally.cacheRead / inputSide : 0
+  };
 }
 
 function estimateTokens(events: EventRecord[]): number {

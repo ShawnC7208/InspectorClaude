@@ -17,6 +17,18 @@ effectively. It surfaces findings and recommendations across six areas:
 
 Everything runs on your machine. No telemetry, no database, no cloud sync.
 
+<p align="center">
+  <img src="docs/images/dashboard-overview.svg" alt="InspectorClaude overview dashboard showing coaching scores across six areas, top findings, and recommended actions" width="100%">
+  <br/>
+  <em>Overview — coaching scores across six areas, with top findings and recommended actions.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/dashboard-activity.svg" alt="InspectorClaude activity view showing per-session token usage, cache-hit rate, and expandable per-session findings" width="100%">
+  <br/>
+  <em>Activity — per-session token usage and cache-hit, with click-to-expand findings for each session.</em>
+</p>
+
 ---
 
 ## Quick start

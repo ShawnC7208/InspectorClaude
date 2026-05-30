@@ -7,6 +7,7 @@ export const RULES: LensRule[] = [
   rule("context.long_without_summary", "Long session without summary", "context_health", "medium", ["chat", "cowork", "code"]),
   rule("context.topic_shift_without_summary", "Topic shift without summary", "context_health", "medium", ["chat", "cowork", "code"]),
   rule("context.compaction_without_summary", "Compaction without durable summary", "context_health", "medium", ["code"]),
+  rule("context.high_token_session", "Unusually high token usage", "context_health", "medium", ["code"]),
   rule("workflow.edits_without_verification", "Code edits without verification", "workflow_structure", "medium", ["code"]),
   rule("workflow.cowork_missing_done_criteria", "Cowork checkpoint missing done criteria", "workflow_structure", "medium", ["cowork"]),
   rule("harness.missing_project_instructions", "Missing project instructions", "ai_harness", "low", ["code"]),
@@ -34,6 +35,7 @@ export function evaluateRules(dataset: NormalizedDataset): LensFinding[] {
   findings.push(...detectLongSessionWithoutSummary(dataset));
   findings.push(...detectTopicShiftWithoutSummary(dataset));
   findings.push(...detectCompactionWithoutSummary(dataset));
+  findings.push(...detectHighTokenSessions(dataset));
   findings.push(...detectEditsWithoutVerification(dataset));
   findings.push(...detectCoworkMissingDoneCriteria(dataset));
   findings.push(...detectProjectHarnessInventory(dataset));
@@ -215,6 +217,71 @@ function detectCompactionWithoutSummary(dataset: NormalizedDataset): LensFinding
         recommendation: "After compaction, ask Claude to restate the working state: goal, changed files, decisions, open risks, and next action.",
         captureModes: [interaction.captureMode],
         evidenceEvent: weakCompaction,
+        evidenceEvents: events
+      })
+    ];
+  });
+}
+
+function detectHighTokenSessions(dataset: NormalizedDataset): LensFinding[] {
+  // Flag outliers relative to the user's OWN sessions, so there is no magic
+  // token number that goes stale as models and context windows change.
+  const MIN_SESSIONS = 5; // cold-start guard: a couple of sessions is not a distribution
+  const MAD_MULTIPLIER = 3; // ~ above the 90th percentile of a normal-ish spread
+  const FALLBACK_MEDIAN_MULTIPLIER = 2.5; // used when MAD collapses (many identical sessions)
+  const ABSOLUTE_FLOOR = 50_000; // never flag below this — avoids noise on tiny-but-spiky sets
+
+  // Exact-usage Claude Code sessions only; estimated sources are display-only.
+  const sessions = dataset.interactions
+    .filter((interaction) => interaction.source === "code" && (interaction.tokenUsage?.total ?? 0) > 0)
+    .map((interaction) => ({ interaction, usage: interaction.tokenUsage! }));
+  if (sessions.length < MIN_SESSIONS) return [];
+
+  const totals = sessions.map((session) => session.usage.total);
+  const med = median(totals);
+  const madValue = mad(totals, med);
+  const threshold = madValue > 0 ? med + MAD_MULTIPLIER * madValue : med * FALLBACK_MEDIAN_MULTIPLIER;
+  const effectiveThreshold = Math.max(threshold, ABSOLUTE_FLOOR);
+
+  return sessions.flatMap(({ interaction, usage }) => {
+    if (usage.total <= effectiveThreshold) return [];
+    const events = byInteraction(dataset.events, interaction.id);
+    const cacheHitPct = Math.round(usage.cacheHitRatio * 100);
+    const editCount = events.filter(
+      (event) => event.eventType === "tool_call" && (event.toolName === "Edit" || event.toolName === "Write")
+    ).length;
+
+    // Severity scales with how far past the line the session sits.
+    const severity: LensFinding["severity"] = usage.total >= effectiveThreshold * 2 ? "high" : "medium";
+
+    // Shape the coaching "why" from the token breakdown.
+    let why: string;
+    let recommendation: string;
+    if (usage.cacheHitRatio < 0.4) {
+      why = `with a low cache-hit rate (${cacheHitPct}%), suggesting the context kept changing`;
+      recommendation =
+        "Context churn drives most of that cost. Ask Claude for a short state summary, then continue in a fresh, focused session instead of letting one session sprawl.";
+    } else if (editCount <= 2) {
+      why = `but produced little code (${editCount} edit${editCount === 1 ? "" : "s"}), suggesting heavy reading or re-reading`;
+      recommendation =
+        "High token use for little output usually means repeated reads or broad searches. Point Claude at specific files and reuse earlier findings rather than re-fetching them.";
+    } else {
+      why = `(cache-hit ${cacheHitPct}%)`;
+      recommendation =
+        "Long, heavy sessions dilute earlier context. Break large tasks into focused segments and summarize state between them.";
+    }
+
+    return [
+      finding({
+        id: "context.high_token_session",
+        source: "code",
+        severity,
+        interactionIds: [interaction.id],
+        title: "Unusually high token usage for this session",
+        explanation: `This session used ${formatTokens(usage.total)} tokens — well above your typical session (median ${formatTokens(med)}) — ${why}.`,
+        recommendation,
+        captureModes: [interaction.captureMode],
+        evidenceEvent: events.at(-1),
         evidenceEvents: events
       })
     ];
@@ -795,6 +862,9 @@ function finding(input: {
   evidenceNextEvent?: EventRecord;
   keywords?: string[];
   examples?: string[];
+  // Optional per-finding severity, overriding the rule's fixed level (e.g. to
+  // scale by how far an outlier is past its threshold).
+  severity?: LensFinding["severity"];
 }): LensFinding {
   const rule = RULES.find((candidate) => input.id.startsWith(candidate.id));
   const nextEvent =
@@ -804,7 +874,7 @@ function finding(input: {
     id: `${input.id}.${input.interactionIds.join("-")}`,
     category: rule?.category ?? "efficiency",
     title: input.title,
-    severity: rule?.severity ?? "medium",
+    severity: input.severity ?? rule?.severity ?? "medium",
     confidence: confidenceFor(input, rule),
     source: input.source,
     interactionIds: input.interactionIds,
@@ -872,6 +942,7 @@ function confidenceFor(
   if (input.id.startsWith("session_hygiene.mega_session")) confidence -= 0.04;
   if (input.id.startsWith("session_hygiene.frustration_signals")) confidence -= 0.03;
   if (input.id.startsWith("session_hygiene.speed_accept")) confidence -= 0.05; // requires timestamps
+  if (input.id.startsWith("context.high_token_session")) confidence += 0.05; // deterministic from exact usage
 
   return Math.round(Math.max(0.55, Math.min(0.92, confidence)) * 100) / 100;
 }
@@ -936,6 +1007,26 @@ function nextEventAfter(events: EventRecord[], target: EventRecord): EventRecord
 
 function byInteraction(events: EventRecord[], interactionId: string): EventRecord[] {
   return events.filter((event) => event.interactionId === interactionId);
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+// Median absolute deviation — a robust spread measure that a single huge
+// outlier can't inflate the way standard deviation can.
+function mad(values: number[], med: number): number {
+  if (values.length === 0) return 0;
+  return median(values.map((value) => Math.abs(value - med)));
+}
+
+function formatTokens(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}k`;
+  return String(value);
 }
 
 function normalizePrompt(value: string): string {

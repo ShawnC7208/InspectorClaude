@@ -15,17 +15,22 @@ async function main(argv: string[]): Promise<void> {
 
   const server = createServer(async (request, response) => {
     try {
-      if (request.method === "GET" && (request.url === "/" || request.url === "/inspectorclaude-dashboard.html")) {
+      // Parse off any query string so route matching ignores params like
+      // ?includeEvidence=1 (the "Load prompt excerpts" button).
+      const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
+
+      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/inspectorclaude-dashboard.html")) {
         write(response, 200, "text/html; charset=utf-8", html);
         return;
       }
 
-      if (request.method === "POST" && request.url === "/api/analyze-all") {
+      if (request.method === "POST" && url.pathname === "/api/analyze-all") {
         if (!validAnalyzeRequest(request, analyzeToken)) {
           write(response, 403, "application/json; charset=utf-8", JSON.stringify({ ok: false, error: "Analyze All request was rejected." }));
           return;
         }
-        html = await renderAnalyzeAll(analyzeToken);
+        const evidenceMode = url.searchParams.get("includeEvidence") === "1" ? "redacted_excerpts" : "metadata_only";
+        html = await renderAnalyzeAll(analyzeToken, evidenceMode);
         write(response, 200, "application/json; charset=utf-8", JSON.stringify({ ok: true, refreshedAt: new Date().toISOString() }));
         return;
       }
@@ -41,8 +46,11 @@ async function main(argv: string[]): Promise<void> {
   });
 }
 
-async function renderAnalyzeAll(analyzeToken: string): Promise<string> {
-  const model = buildDashboardModel(await datasetForAllSources());
+async function renderAnalyzeAll(
+  analyzeToken: string,
+  evidenceMode: "metadata_only" | "redacted_excerpts" = "metadata_only"
+): Promise<string> {
+  const model = buildDashboardModel(await datasetForAllSources(), { evidenceMode });
   return renderDashboardHtml(model, { title: "InspectorClaude", analyzeToken });
 }
 

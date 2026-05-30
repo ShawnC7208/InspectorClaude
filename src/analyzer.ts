@@ -48,7 +48,8 @@ export function buildDashboardModel(dataset: NormalizedDataset, options: Dashboa
     summary: {
       overallScore,
       headline: headlineFor(overallScore),
-      topActions: unique(recommendations.map((recommendation) => recommendation.nextAction)).slice(0, 3)
+      topActions: unique(recommendations.map((recommendation) => recommendation.nextAction)).slice(0, 3),
+      tokenTotals: buildTokenTotals(dataset)
     },
     scores,
     activity: buildActivity(dataset, findings),
@@ -132,15 +133,56 @@ function buildSourceSummaries(dataset: NormalizedDataset): SourceSummary[] {
 
 function buildActivity(dataset: NormalizedDataset, findings: LensFinding[]): ActivityTimeline {
   return {
-    sessions: dataset.interactions.map((interaction) => ({
-      interactionId: interaction.id,
-      source: interaction.source,
-      title: interaction.title,
-      startedAt: interaction.startedAt,
-      endedAt: interaction.endedAt,
-      eventCount: dataset.events.filter((event) => event.interactionId === interaction.id).length,
-      findingCount: findings.filter((finding) => finding.interactionIds.includes(interaction.id)).length
-    }))
+    sessions: dataset.interactions.map((interaction) => {
+      const usage = interaction.tokenUsage;
+      const tokenSource: "exact" | "estimated" | "none" = usage ? "exact" : interaction.estimatedTokens ? "estimated" : "none";
+      const highUsage = findings.some(
+        (finding) => finding.ruleId === "context.high_token_session" && finding.interactionIds.includes(interaction.id)
+      );
+      return {
+        interactionId: interaction.id,
+        source: interaction.source,
+        title: interaction.title,
+        startedAt: interaction.startedAt,
+        endedAt: interaction.endedAt,
+        eventCount: dataset.events.filter((event) => event.interactionId === interaction.id).length,
+        findingCount: findings.filter((finding) => finding.interactionIds.includes(interaction.id)).length,
+        totalTokens: usage?.total ?? interaction.estimatedTokens,
+        tokenSource,
+        cacheHitRatio: usage?.cacheHitRatio,
+        highUsage: highUsage || undefined
+      };
+    })
+  };
+}
+
+function buildTokenTotals(dataset: NormalizedDataset): LensDashboardModel["summary"]["tokenTotals"] {
+  let exactTotal = 0;
+  let estimatedTotal = 0;
+  let sessionsWithExact = 0;
+  let heaviest: { id: string; title?: string; tokens: number } | undefined;
+
+  for (const interaction of dataset.interactions) {
+    const usage = interaction.tokenUsage;
+    if (usage) {
+      exactTotal += usage.total;
+      sessionsWithExact += 1;
+      if (!heaviest || usage.total > heaviest.tokens) {
+        heaviest = { id: interaction.id, title: interaction.title, tokens: usage.total };
+      }
+    } else {
+      estimatedTotal += interaction.estimatedTokens ?? 0;
+    }
+  }
+
+  if (exactTotal === 0 && estimatedTotal === 0) return undefined;
+  return {
+    exactTotal,
+    estimatedTotal,
+    sessionsWithExact,
+    heaviestSessionId: heaviest?.id,
+    heaviestSessionTitle: heaviest?.title,
+    heaviestSessionTokens: heaviest?.tokens
   };
 }
 
