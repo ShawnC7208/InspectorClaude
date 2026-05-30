@@ -1,0 +1,12 @@
+{"type":"user","timestamp":"2026-05-22T14:00:00.000Z","cwd":"/Users/example/project","message":{"role":"user","content":"Help improve this"}}
+{"type":"assistant","timestamp":"2026-05-22T14:00:02.000Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/Users/example/project/src/app.ts"}}]}}
+{"type":"user","timestamp":"2026-05-22T14:00:04.000Z","message":{"role":"user","content":[{"type":"tool_result","content":"const apiKey = \"sk-testsecret1234567890\";","is_error":false}]}}
+{"type":"assistant","timestamp":"2026-05-22T14:00:06.000Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/Users/example/project/src/app.ts"}}]}}
+{"type":"assistant","timestamp":"2026-05-22T14:00:08.000Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/Users/example/project/src/app.ts","old_string":"x","new_string":"y"}}]}}
+{"type":"assistant","timestamp":"2026-05-22T14:00:10.000Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"bad-command --flag"}}]}}
+{"type":"user","timestamp":"2026-05-22T14:00:12.000Z","message":{"role":"user","content":[{"type":"tool_result","content":"error: command not found","is_error":true}]}}
+{"type":"assistant","timestamp":"2026-05-22T14:00:14.000Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"bad-command --flag"}}]}}
+{"type":"user","timestamp":"2026-05-22T14:00:16.000Z","message":{"role":"user","content":[{"type":"tool_result","content":"error: command not found","is_error":true}]}}
+{"type":"user","timestamp":"2026-05-22T14:00:18.000Z","message":{"role":"user","content":"Use the same review checklist for this workflow"}}
+{"type":"user","timestamp":"2026-05-22T14:00:20.000Z","message":{"role":"user","content":"Use the same review checklist for this workflow"}}
+not json

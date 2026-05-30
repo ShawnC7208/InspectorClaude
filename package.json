@@ -1,0 +1,62 @@
+{
+  "name": "inspectorclaude",
+  "version": "0.1.0",
+  "description": "Local-first Claude usage coaching dashboard analyzer.",
+  "license": "MIT",
+  "author": "Shawn Chandwani",
+  "type": "module",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "mcp",
+    "coaching",
+    "dashboard",
+    "local-first",
+    "developer-tools"
+  ],
+  "homepage": "https://github.com/ShawnC7208/InspectorClaude#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShawnC7208/InspectorClaude.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ShawnC7208/InspectorClaude/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist/src/",
+    "claude-plugin/",
+    "README.md"
+  ],
+  "bin": {
+    "inspectorclaude": "./dist/src/cli.js",
+    "inspectorclaude-mcp": "./dist/src/mcpServer.js",
+    "inspectorclaude-serve": "./dist/src/mcpAppServer.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "cli": "npm run build && node dist/src/cli.js",
+    "setup-plugin": "npm run build && node dist/src/cli.js setup-plugin",
+    "dashboard": "npm run build && node dist/src/dashboardServer.js",
+    "mcp": "npm run build && node dist/src/mcpServer.js",
+    "serve": "npm run build && node dist/src/mcpAppServer.js",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "test:fast": "node --test dist/test/*.test.js"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^20.19.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "zod": "^4.4.3"
+  }
+}

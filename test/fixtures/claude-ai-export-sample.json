@@ -1,0 +1,100 @@
+[
+  {
+    "uuid": "conv-aaa-111",
+    "name": "Help me write a sorting algorithm",
+    "created_at": "2024-03-10T09:00:00.000000+00:00",
+    "updated_at": "2024-03-10T09:25:00.000000+00:00",
+    "account": { "uuid": "user-abc" },
+    "chat_messages": [
+      {
+        "uuid": "msg-001",
+        "text": "Can you help me write a merge sort in Python?",
+        "sender": "human",
+        "created_at": "2024-03-10T09:00:00.000000+00:00",
+        "updated_at": "2024-03-10T09:00:00.000000+00:00",
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "msg-002",
+        "text": "Sure! Here is a merge sort implementation in Python:\n\n```python\ndef merge_sort(arr):\n    if len(arr) <= 1:\n        return arr\n    mid = len(arr) // 2\n    left = merge_sort(arr[:mid])\n    right = merge_sort(arr[mid:])\n    return merge(left, right)\n\ndef merge(left, right):\n    result = []\n    i = j = 0\n    while i < len(left) and j < len(right):\n        if left[i] <= right[j]:\n            result.append(left[i])\n            i += 1\n        else:\n            result.append(right[j])\n            j += 1\n    result.extend(left[i:])\n    result.extend(right[j:])\n    return result\n```\n\nThis runs in O(n log n) time.",
+        "sender": "assistant",
+        "created_at": "2024-03-10T09:01:30.000000+00:00",
+        "updated_at": "2024-03-10T09:01:30.000000+00:00",
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "msg-003",
+        "text": "That's wrong, try again with a different approach",
+        "sender": "human",
+        "created_at": "2024-03-10T09:05:00.000000+00:00",
+        "updated_at": "2024-03-10T09:05:00.000000+00:00",
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "msg-004",
+        "text": "My apologies! Here is an iterative bottom-up merge sort instead...",
+        "sender": "assistant",
+        "created_at": "2024-03-10T09:06:00.000000+00:00",
+        "updated_at": "2024-03-10T09:06:00.000000+00:00",
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "msg-005",
+        "text": "Still not right, start over with quicksort",
+        "sender": "human",
+        "created_at": "2024-03-10T09:10:00.000000+00:00",
+        "updated_at": "2024-03-10T09:10:00.000000+00:00",
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "msg-006",
+        "text": "Of course! Here is a quicksort implementation...",
+        "sender": "assistant",
+        "created_at": "2024-03-10T09:11:00.000000+00:00",
+        "updated_at": "2024-03-10T09:11:00.000000+00:00",
+        "attachments": [],
+        "files": []
+      }
+    ]
+  },
+  {
+    "uuid": "conv-bbb-222",
+    "name": "Draft a cover letter",
+    "created_at": "2024-03-11T14:00:00.000000+00:00",
+    "updated_at": "2024-03-11T14:15:00.000000+00:00",
+    "account": { "uuid": "user-abc" },
+    "chat_messages": [
+      {
+        "uuid": "msg-101",
+        "text": "Write me a cover letter for a senior engineer role at Stripe",
+        "sender": "human",
+        "created_at": "2024-03-11T14:00:00.000000+00:00",
+        "updated_at": "2024-03-11T14:00:00.000000+00:00",
+        "attachments": [{ "file_name": "resume.pdf", "file_size": 45000 }],
+        "files": []
+      },
+      {
+        "uuid": "msg-102",
+        "text": "Here is a tailored cover letter for a senior engineer position at Stripe...",
+        "sender": "assistant",
+        "created_at": "2024-03-11T14:01:30.000000+00:00",
+        "updated_at": "2024-03-11T14:01:30.000000+00:00",
+        "attachments": [],
+        "files": []
+      }
+    ]
+  },
+  {
+    "uuid": "conv-ccc-333",
+    "name": "Empty conversation",
+    "created_at": "2024-03-12T10:00:00.000000+00:00",
+    "updated_at": "2024-03-12T10:00:00.000000+00:00",
+    "account": { "uuid": "user-abc" },
+    "chat_messages": []
+  }
+]

@@ -1,0 +1,8 @@
+{
+  "inspectorclaude": {
+    "command": "node",
+    "args": [
+      "../dist/src/mcpServer.js"
+    ]
+  }
+}

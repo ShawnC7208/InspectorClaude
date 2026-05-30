@@ -1,0 +1,14 @@
+{
+  "name": "inspectorclaude",
+  "owner": {
+    "name": "Shawn Chandwani"
+  },
+  "plugins": [
+    {
+      "name": "inspectorclaude",
+      "source": "./claude-plugin",
+      "description": "Local-first Claude usage coaching dashboard for Claude Chat, Cowork, and Code users.",
+      "version": "0.1.0"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+# Dependencies and build output
+node_modules/
+dist/
+
+# OS / editor cruft
+.DS_Store
+
+# InspectorClaude runtime artifacts
+.inspectorclaude/cache/
+.inspectorclaude/reports/
+
+# Local Claude Code machine-specific settings (never commit — contains local paths)
+.claude/
+.claude/settings.local.json
+
+# Tooling artifacts (understand-anything knowledge graph)
+.understand-anything/
+
+# Internal design specs (kept locally, not published)
+spec-docs/

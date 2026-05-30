@@ -1,0 +1,8 @@
+{
+  "name": "inspectorclaude",
+  "version": "0.1.0",
+  "description": "Local-first Claude usage coaching dashboard for Claude Chat, Cowork, and Code users.",
+  "author": {
+    "name": "InspectorClaude contributors"
+  }
+}
